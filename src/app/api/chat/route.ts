@@ -11,9 +11,26 @@ const client = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
+// Types locaux
+interface Session {
+  id: string;
+  title: string;
+  starts_at: string;
+  location?: string | null;
+  mode?: string | null;
+}
+
+interface Participant {
+  id: string;
+  full_name: string;
+  email: string;
+  session_id: string;
+}
+
 export async function POST(req: Request) {
   try {
-    const { messages } = await req.json();
+    const { messages }: { messages: { role: string; content: string }[] } =
+      await req.json();
     const lastMessage = messages[messages.length - 1]?.content || "";
 
     let extraContext = "";
@@ -28,28 +45,26 @@ export async function POST(req: Request) {
 
     // 👉 Recherche sessions
     if (lastMessage.toLowerCase().includes("session")) {
-      let { data: sessions, error } = await supabase
+      const { data: sessionsRaw, error: sessionsError } = await supabase
         .from("sessions")
         .select("id, title, starts_at, location, mode")
         .order("starts_at", { ascending: true });
 
-      if (error) console.error(error);
+      if (sessionsError) console.error(sessionsError);
 
-      if (sessions) {
-        sessions = sessions.filter((s) => {
-          const date = new Date(s.starts_at);
-          const mois = date
-            .toLocaleDateString("fr-FR", { month: "long" })
-            .toLowerCase();
-          const annee = date.getFullYear().toString();
-          return (
-            (!moisMatch || mois.includes(moisMatch[0].toLowerCase())) &&
-            (!anneeMatch || annee === anneeMatch[0])
-          );
-        });
-      }
+      const sessions: Session[] = (sessionsRaw || []).filter((s) => {
+        const date = new Date(s.starts_at);
+        const mois = date
+          .toLocaleDateString("fr-FR", { month: "long" })
+          .toLowerCase();
+        const annee = date.getFullYear().toString();
+        return (
+          (!moisMatch || mois.includes(moisMatch[0].toLowerCase())) &&
+          (!anneeMatch || annee === anneeMatch[0])
+        );
+      });
 
-      if (sessions && sessions.length > 0) {
+      if (sessions.length > 0) {
         const rows = sessions
           .map(
             (s) =>
@@ -72,43 +87,43 @@ export async function POST(req: Request) {
 
     // 👉 Recherche participants
     if (lastMessage.toLowerCase().includes("participant")) {
-      let { data: participants, error } = await supabase
+      const { data: participantsRaw, error: participantsError } = await supabase
         .from("participants")
         .select("id, full_name, email, session_id")
         .order("full_name", { ascending: true });
 
-      if (error) console.error(error);
+      if (participantsError) console.error(participantsError);
 
-      if (participants && participants.length > 0) {
-        // Récupération des sessions liées
+      const participants: Participant[] = participantsRaw || [];
+
+      if (participants.length > 0) {
         const sessionIds = participants.map((p) => p.session_id);
-        const { data: sessions, error: errSessions } = await supabase
+        const { data: sessions, error: sessionsError2 } = await supabase
           .from("sessions")
           .select("id, title, starts_at")
           .in("id", sessionIds);
 
-        if (errSessions) console.error(errSessions);
+        if (sessionsError2) console.error(sessionsError2);
 
-        // ⚡ Filtrage par mois/année si demandé
-        let filteredParticipants = participants;
-        if (moisMatch || anneeMatch) {
-          filteredParticipants = participants.filter((p) => {
-            const session = sessions?.find((s) => s.id === p.session_id);
-            if (!session) return false;
-            const date = new Date(session.starts_at);
-            const mois = date
-              .toLocaleDateString("fr-FR", { month: "long" })
-              .toLowerCase();
-            const annee = date.getFullYear().toString();
-            return (
-              (!moisMatch || mois.includes(moisMatch[0].toLowerCase())) &&
-              (!anneeMatch || annee === anneeMatch[0])
-            );
-          });
-        }
+        // ⚡ Filtrage si mois/année demandés
+        const filtered = (moisMatch || anneeMatch)
+          ? participants.filter((p) => {
+              const session = sessions?.find((s) => s.id === p.session_id);
+              if (!session) return false;
+              const date = new Date(session.starts_at);
+              const mois = date
+                .toLocaleDateString("fr-FR", { month: "long" })
+                .toLowerCase();
+              const annee = date.getFullYear().toString();
+              return (
+                (!moisMatch || mois.includes(moisMatch[0].toLowerCase())) &&
+                (!anneeMatch || annee === anneeMatch[0])
+              );
+            })
+          : participants;
 
-        if (filteredParticipants.length > 0) {
-          const rows = filteredParticipants
+        if (filtered.length > 0) {
+          const rows = filtered
             .map((p) => {
               const session = sessions?.find((s) => s.id === p.session_id);
               return `👤 ${p.full_name} — 📧 ${p.email} — 🎓 ${
@@ -132,14 +147,13 @@ export async function POST(req: Request) {
       lastMessage.toLowerCase().includes("ajouter un participant") ||
       lastMessage.toLowerCase().includes("inscrire un participant")
     ) {
-      const { data: sessions, error } = await supabase
+      const { data: sessions, error: sessionsError3 } = await supabase
         .from("sessions")
         .select("id, title, starts_at");
 
-      if (error) console.error(error);
+      if (sessionsError3) console.error(sessionsError3);
 
       if (sessions && sessions.length > 0) {
-        // On cherche une session qui correspond à ce que l’utilisateur a écrit
         const targetSession = sessions.find((s) => {
           const date = new Date(s.starts_at);
           const mois = date
@@ -156,7 +170,7 @@ export async function POST(req: Request) {
         if (targetSession) {
           extraContext = `✅ Tu peux inscrire ton participant ici 👉 /sessions/${targetSession.id}/register`;
         } else {
-          extraContext = `⚠️ Je n’ai pas trouvé la session demandée.`;
+          extraContext = "⚠️ Je n’ai pas trouvé la session demandée.";
         }
       }
     }
@@ -185,13 +199,14 @@ Toujours formater :
     });
 
     const reply =
-      completion.choices[0]?.message?.content ||
-      "⚠️ Pas de réponse du modèle.";
+      completion.choices[0]?.message?.content || "⚠️ Pas de réponse du modèle.";
+
     return NextResponse.json({ reply });
-  } catch (error: any) {
-    console.error("Erreur API OpenAI:", error);
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "Erreur inconnue";
+    console.error("Erreur API OpenAI:", err);
     return NextResponse.json(
-      { reply: "❌ Erreur côté serveur : " + error.message },
+      { reply: "❌ Erreur côté serveur : " + message },
       { status: 500 }
     );
   }

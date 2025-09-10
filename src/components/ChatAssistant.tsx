@@ -6,9 +6,7 @@ import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 
 export default function ChatAssistant() {
-  const isEnabled = false // 👈 Mets à false pour désactiver, true pour réactiver
-  if (!isEnabled) return null // 👈 rien ne s'affiche
-  
+  // ✅ Hooks déclarés en haut
   const [messages, setMessages] = useState<{ role: string; content: string }[]>([])
   const [input, setInput] = useState("")
   const [isOpen, setIsOpen] = useState(false)
@@ -22,6 +20,7 @@ export default function ChatAssistant() {
     "➕ Ajouter un participant",
   ]
 
+  // 🚀 Envoi message API
   async function sendMessage() {
     if (!input.trim()) return
     const userMessage = { role: "user", content: input }
@@ -44,19 +43,27 @@ export default function ChatAssistant() {
       }
 
       const data = await res.json()
-      setMessages(prev => [...prev, { role: "assistant", content: data.reply || "⚠️ Pas de réponse" }])
+      setMessages(prev => [
+        ...prev,
+        { role: "assistant", content: data.reply || "⚠️ Pas de réponse" },
+      ])
     } catch (error) {
       console.error("Erreur API:", error)
-      setMessages(prev => [...prev, { role: "assistant", content: "❌ Erreur de connexion au serveur." }])
+      setMessages(prev => [
+        ...prev,
+        { role: "assistant", content: "❌ Erreur de connexion au serveur." },
+      ])
     }
   }
 
+  // ⬇️ Scroll auto en bas
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight
     }
   }, [messages])
 
+  // ✅ Formatage des listes
   function formatMessage(content: string) {
     if (content.includes("|")) {
       const lignes = content
@@ -72,6 +79,7 @@ export default function ChatAssistant() {
     return <span>{content}</span>
   }
 
+  // ✅ Rendu UI
   return (
     <div className="fixed bottom-4 right-4">
       {!isOpen && (
@@ -91,64 +99,75 @@ export default function ChatAssistant() {
           <CardHeader className="flex justify-between items-center font-bold">
             Assistant Certif 🎓
             <div className="flex gap-2">
-              <Button variant="outline" size="sm" onClick={() => setIsExpanded(!isExpanded)}>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setIsExpanded(!isExpanded)}
+              >
                 {isExpanded ? "Réduire" : "Agrandir"}
               </Button>
-              <Button variant="ghost" size="sm" onClick={() => setIsOpen(false)} className="text-lg">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setIsOpen(false)}
+                className="text-lg"
+              >
                 ✖
               </Button>
             </div>
           </CardHeader>
 
-          {/* ✅ Organisation en flex, messages scrolables, bas toujours visible */}
           <CardContent className="flex flex-col flex-1 overflow-hidden">
-            {/* Zone messages avec scroll confiné */}
+            {/* Zone messages */}
             <div
-                ref={scrollRef}
-                className="flex-1 border rounded-md p-2 mb-2 overflow-y-auto"
+              ref={scrollRef}
+              className="flex-1 border rounded-md p-2 mb-2 overflow-y-auto"
             >
-                {messages.map((m, i) => (
-                <div key={i} className={`mb-2 ${m.role === "user" ? "text-right" : "text-left"}`}>
-                    <div
+              {messages.map((m, i) => (
+                <div
+                  key={i}
+                  className={`mb-2 ${m.role === "user" ? "text-right" : "text-left"}`}
+                >
+                  <div
                     className={
-                        m.role === "user"
+                      m.role === "user"
                         ? "bg-blue-200 p-2 rounded-xl inline-block max-w-full break-words"
                         : "bg-gray-200 p-2 rounded-xl inline-block max-w-full whitespace-pre-wrap font-sans block"
                     }
-                    >
+                  >
                     {formatMessage(m.content)}
-                    </div>
+                  </div>
                 </div>
-                ))}
+              ))}
             </div>
 
-            {/* Suggestions + Input toujours en bas */}
+            {/* Suggestions + Input */}
             <div className="mt-2 shrink-0">
-                <div className="flex flex-wrap gap-2 mb-3">
+              <div className="flex flex-wrap gap-2 mb-3">
                 {suggestions.map((s, i) => (
-                    <Button
+                  <Button
                     key={i}
                     variant="secondary"
                     size="sm"
                     className="rounded-full"
                     onClick={() => setInput(s)}
-                    >
+                  >
                     {s}
-                    </Button>
+                  </Button>
                 ))}
-                </div>
+              </div>
 
-                <div className="flex gap-2">
+              <div className="flex gap-2">
                 <Input
-                    value={input}
-                    onChange={e => setInput(e.target.value)}
-                    placeholder="Pose ta question..."
-                    onKeyDown={e => e.key === "Enter" && sendMessage()}
+                  value={input}
+                  onChange={e => setInput(e.target.value)}
+                  placeholder="Pose ta question..."
+                  onKeyDown={e => e.key === "Enter" && sendMessage()}
                 />
                 <Button onClick={sendMessage}>Envoyer</Button>
-                </div>
+              </div>
             </div>
-            </CardContent>
+          </CardContent>
         </Card>
       )}
     </div>
